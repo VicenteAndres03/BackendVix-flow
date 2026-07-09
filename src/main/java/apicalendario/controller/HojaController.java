@@ -49,6 +49,25 @@ public class HojaController {
         return ResponseEntity.ok(hojaService.actualizarHoja(id, dto));
     }
 
+    // ── Subir imagen a S3 (para el editor de texto) ──
+    @PostMapping("/{id}/imagen")
+    public ResponseEntity<?> subirImagen(
+            @PathVariable Long id,
+            @RequestParam("archivo") MultipartFile archivo) {
+        try {
+            if (archivo.isEmpty()) return ResponseEntity.badRequest().body("Archivo vacío");
+            String contentType = archivo.getContentType() != null ? archivo.getContentType() : "";
+            if (!contentType.startsWith("image/"))
+                return ResponseEntity.badRequest().body("Solo se permiten imágenes");
+
+            String url = s3Service.subirImagen(archivo, String.valueOf(id));
+            return ResponseEntity.ok(java.util.Map.of("url", url));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error subiendo imagen: " + e.getMessage());
+        }
+    }
+
     // ── Subir PDF a S3 ──
     @PostMapping("/{id}/pdf")
     public ResponseEntity<?> subirPdf(

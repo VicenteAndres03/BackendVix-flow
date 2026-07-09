@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -33,6 +34,26 @@ public class S3Service {
                 .bucket(bucket)
                 .key(clave)
                 .contentType("application/pdf")
+                .contentLength(archivo.getSize())
+                .build(),
+            RequestBody.fromInputStream(archivo.getInputStream(), archivo.getSize())
+        );
+
+        return "https://" + bucket + ".s3." + region + ".amazonaws.com/" + clave;
+    }
+
+    public String subirImagen(MultipartFile archivo, String hojaId) throws IOException {
+        String extension = Optional.ofNullable(archivo.getOriginalFilename())
+                .filter(f -> f.contains("."))
+                .map(f -> f.substring(f.lastIndexOf(".")))
+                .orElse(".jpg");
+        String clave = "imagenes/" + hojaId + "/" + UUID.randomUUID() + extension;
+
+        s3Client.putObject(
+            PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(clave)
+                .contentType(archivo.getContentType() != null ? archivo.getContentType() : "image/jpeg")
                 .contentLength(archivo.getSize())
                 .build(),
             RequestBody.fromInputStream(archivo.getInputStream(), archivo.getSize())
