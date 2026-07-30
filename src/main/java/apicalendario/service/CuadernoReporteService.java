@@ -86,15 +86,49 @@ public class CuadernoReporteService {
     }
 
     /**
+     * El editor web envuelve las imágenes en un <span class="img-wrapper"
+     * style="position:relative;display:inline-block;..."> para poder
+     * posicionar controles de UI encima de ellas (ej: un botón de borrar).
+     * Esos estilos son conceptos de CSS de navegador que HTMLWorker no
+     * entiende, y hacen que la imagen se solape con el texto siguiente
+     * en el PDF en vez de quedar en su propio bloque.
+     *
+     * Aquí "desenvolvemos" la imagen de ese span y le agregamos un salto
+     * de línea después, para forzarla a su propio espacio en el documento.
+     * También quitamos cualquier "position:" o "display: inline-block"
+     * suelto que quede en otros elementos, por la misma razón.
+     */
+    private String limpiarHtmlParaPdf(String html) {
+        String limpio = html;
+
+        // Desenvuelve <span class="img-wrapper" ...>...(img)...</span> dejando solo el
+        // <img>,
+        // y agrega un <br/> después para que quede en su propia línea.
+        limpio = limpio.replaceAll(
+                "(?s)<span[^>]*class=\"img-wrapper\"[^>]*>(.*?)</span>",
+                "$1<br/>");
+
+        // Por si queda algún position/display inline-block suelto en otros elementos
+        limpio = limpio.replaceAll("position\\s*:\\s*[^;\"]+;?", "");
+        limpio = limpio.replaceAll("display\\s*:\\s*inline-block;?", "");
+
+        // contenteditable="false" no aporta nada en el PDF, solo ruido
+        limpio = limpio.replaceAll("\\s*contenteditable=\"[^\"]*\"", "");
+
+        return limpio;
+    }
+
+    /**
      * Convierte el HTML del editor (negrita, cursiva, subrayado, tamaños, etc.)
      * en elementos PDF reales usando HTMLWorker, en vez de imprimir las
      * etiquetas HTML como texto plano.
      */
     private void agregarContenidoHtml(Document document, String contenidoHtml) {
         try {
+            String htmlLimpio = limpiarHtmlParaPdf(contenidoHtml);
             // HTMLWorker interpreta <b>, <i>, <u>, <p>, <br>, <span style="...">, etc.
             HTMLWorker htmlWorker = new HTMLWorker(document);
-            List<Element> elementos = htmlWorker.parseToList(new StringReader(contenidoHtml), null);
+            List<Element> elementos = htmlWorker.parseToList(new StringReader(htmlLimpio), null);
             for (Element elemento : elementos) {
                 document.add(elemento);
             }
