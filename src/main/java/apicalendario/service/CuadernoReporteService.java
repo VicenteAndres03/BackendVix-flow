@@ -86,49 +86,57 @@ public class CuadernoReporteService {
     }
 
     /**
-     * El editor web envuelve las imágenes en un <span class="img-wrapper"
-     * style="position:relative;display:inline-block;..."> para poder
-     * posicionar controles de UI encima de ellas (ej: un botón de borrar).
-     * Esos estilos son conceptos de CSS de navegador que HTMLWorker no
-     * entiende, y hacen que la imagen se solape con el texto siguiente
-     * en el PDF en vez de quedar en su propio bloque.
-     *
-     * Aquí "desenvolvemos" la imagen de ese span y le agregamos un salto
-     * de línea después, para forzarla a su propio espacio en el documento.
-     * También quitamos cualquier "position:" o "display: inline-block"
-     * suelto que quede en otros elementos, por la misma razón.
+     * Limpia HTML residual que no aporta nada al PDF (contenteditable,
+     * estilos de posicionamiento de navegador que puedan colarse en algún
+     * elemento que no sea imagen).
      */
     private String limpiarHtmlParaPdf(String html) {
         String limpio = html;
-
-        // Desenvuelve <span class="img-wrapper" ...>...(img)...</span> dejando solo el
-        // <img>,
-        // y agrega un <br/> después para que quede en su propia línea.
-        limpio = limpio.replaceAll(
-                "(?s)<span[^>]*class=\"img-wrapper\"[^>]*>(.*?)</span>",
-                "$1<br/>");
-
-        // Por si queda algún position/display inline-block suelto en otros elementos
         limpio = limpio.replaceAll("position\\s*:\\s*[^;\"]+;?", "");
         limpio = limpio.replaceAll("display\\s*:\\s*inline-block;?", "");
-
-        // contenteditable="false" no aporta nada en el PDF, solo ruido
         limpio = limpio.replaceAll("\\s*contenteditable=\"[^\"]*\"", "");
-
         return limpio;
     }
 
     /**
-     * Convierte el HTML del editor (negrita, cursiva, subrayado, tamaños, etc.)
-     * en elementos PDF reales usando HTMLWorker, en vez de imprimir las
-     * etiquetas HTML como texto plano.
+     * Convierte el HTML del editor en elementos PDF reales.
+     *
+     * IMPORTANTE: las imágenes se procesan APARTE del texto. HTMLWorker
+     * mete las imágenes dentro del flujo de texto como elementos "inline"
+     * sin escalarlas, lo que hace que se superpongan con el párrafo
+     * siguiente. Por eso acá separamos manualmente cada <img>, la
+     * decodificamos, la escalamos al ancho de la página, y la agregamos
+     * como su propio bloque independiente — así nunca se mezcla con el
+     * texto de al lado.
      */
-    private void agregarContenidoHtml(Document document, String contenidoHtml) {
+    private static final java.util.regex.Pattern IMG_PATTERN = java.util.regex.Pattern.compile(
+            "<img[^>]*src=\"data:image/[a-zA-Z]+;base64,([A-Za-z0-9+/=\\s]+)\"[^>]*>");
+
+    private void agregarContenidoHtml(Document document, String contenidoHtml) throws DocumentException {
+        java.util.regex.Matcher matcher = IMG_PATTERN.matcher(contenidoHtml);
+
+        int ultimoFin = 0;
+        while (matcher.find()) {
+            String textoAntes = contenidoHtml.substring(ultimoFin, matcher.start());
+            agregarTextoHtml(document, textoAntes);
+
+            String base64Data = matcher.group(1).replaceAll("\\s", "");
+            agregarImagenBase64(document, base64Data);
+
+            ultimoFin = matcher.end();
+        }
+
+        String resto = contenidoHtml.substring(ultimoFin);
+        agregarTextoHtml(document, resto);
+    }
+
+    private void agregarTextoHtml(Document document, String html) throws DocumentException {
+        if (html == null || html.replaceAll("<[^>]*>", "").trim().isEmpty())
+            return;
+
         try {
-            String htmlLimpio = limpiarHtmlParaPdf(contenidoHtml);
-            // HTMLWorker interpreta <b>, <i>, <u>, <p>, <br>, <span style="...">, etc.
             HTMLWorker htmlWorker = new HTMLWorker(document);
-            List<Element> elementos = htmlWorker.parseToList(new StringReader(htmlLimpio), null);
+            List<Element> elementos = htmlWorker.parseToList(new StringReader(limpiarHtmlParaPdf(html)), null);
             for (Element elemento : elementos) {
                 document.add(elemento);
             }
@@ -136,16 +144,34 @@ public class CuadernoReporteService {
             // Si el HTML viene mal formado (ej: tags sin cerrar del contentEditable),
             // caemos de vuelta a texto plano SIN las etiquetas, en vez de romper el PDF
             // completo.
-            String textoPlano = contenidoHtml.replaceAll("<[^>]*>", "");
-            Font fontFallback = FontFactory.getFont(FontFactory.HELVETICA, 11);
-            Paragraph fallback = new Paragraph(textoPlano, fontFallback);
-            fallback.setSpacingAfter(15);
-            try {
+            String textoPlano = html.replaceAll("<[^>]*>", "").trim();
+            if (!textoPlano.isEmpty()) {
+                Font fontFallback = FontFactory.getFont(FontFactory.HELVETICA, 11);
+                Paragraph fallback = new Paragraph(textoPlano, fontFallback);
+                fallback.setSpacingAfter(15);
                 document.add(fallback);
-            } catch (DocumentException ignored) {
-                // Última línea de defensa: si ni el fallback se puede agregar, se omite esta
-                // hoja.
             }
+        }
+    }
+
+    private void agregarImagenBase64(Document document, String base64Data) throws DocumentException {
+        try {
+            byte[] bytes = java.util.Base64.getDecoder().decode(base64Data);
+            Image imagen = Image.getInstance(bytes);
+
+            float anchoDisponible = document.getPageSize().getWidth()
+                    - document.leftMargin() - document.rightMargin();
+            if (imagen.getWidth() > anchoDisponible) {
+                imagen.scaleToFit(anchoDisponible, Float.MAX_VALUE);
+            }
+
+            imagen.setSpacingBefore(10f);
+            imagen.setSpacingAfter(10f);
+            imagen.setAlignment(Element.ALIGN_CENTER);
+            document.add(imagen);
+        } catch (Exception e) {
+            // Si la imagen viene corrupta o no se puede decodificar, se omite
+            // en vez de romper el PDF completo.
         }
     }
 }
