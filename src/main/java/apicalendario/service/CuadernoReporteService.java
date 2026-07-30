@@ -5,11 +5,13 @@ import apicalendario.model.Hoja;
 import apicalendario.repository.CuadernoRepository;
 import apicalendario.repository.HojaRepository;
 import com.lowagie.text.*;
+import com.lowagie.text.html.simpleparser.HTMLWorker;
 import com.lowagie.text.pdf.PdfWriter;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.StringReader;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -69,10 +71,7 @@ public class CuadernoReporteService {
                 document.add(tituloHoja);
 
                 if (hoja.getContenido() != null && !hoja.getContenido().isEmpty()) {
-                    Font fontContenido = FontFactory.getFont(FontFactory.HELVETICA, 11);
-                    Paragraph contenido = new Paragraph(hoja.getContenido(), fontContenido);
-                    contenido.setSpacingAfter(15);
-                    document.add(contenido);
+                    agregarContenidoHtml(document, hoja.getContenido());
                 }
 
                 document.add(new Paragraph("───────────────────────────────────────────"));
@@ -84,5 +83,35 @@ public class CuadernoReporteService {
         }
 
         return out.toByteArray();
+    }
+
+    /**
+     * Convierte el HTML del editor (negrita, cursiva, subrayado, tamaños, etc.)
+     * en elementos PDF reales usando HTMLWorker, en vez de imprimir las
+     * etiquetas HTML como texto plano.
+     */
+    private void agregarContenidoHtml(Document document, String contenidoHtml) {
+        try {
+            // HTMLWorker interpreta <b>, <i>, <u>, <p>, <br>, <span style="...">, etc.
+            HTMLWorker htmlWorker = new HTMLWorker(document);
+            List<Element> elementos = htmlWorker.parseToList(new StringReader(contenidoHtml), null);
+            for (Element elemento : elementos) {
+                document.add(elemento);
+            }
+        } catch (Exception e) {
+            // Si el HTML viene mal formado (ej: tags sin cerrar del contentEditable),
+            // caemos de vuelta a texto plano SIN las etiquetas, en vez de romper el PDF
+            // completo.
+            String textoPlano = contenidoHtml.replaceAll("<[^>]*>", "");
+            Font fontFallback = FontFactory.getFont(FontFactory.HELVETICA, 11);
+            Paragraph fallback = new Paragraph(textoPlano, fontFallback);
+            fallback.setSpacingAfter(15);
+            try {
+                document.add(fallback);
+            } catch (DocumentException ignored) {
+                // Última línea de defensa: si ni el fallback se puede agregar, se omite esta
+                // hoja.
+            }
+        }
     }
 }
