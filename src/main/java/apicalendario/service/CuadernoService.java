@@ -3,6 +3,7 @@ package apicalendario.service;
 import apicalendario.dto.CuadernoDto;
 import apicalendario.exception.UsuarioNoEncontradoException;
 import apicalendario.model.Cuaderno;
+import apicalendario.model.EstadoSuscripcion;
 import apicalendario.model.User;
 import apicalendario.repository.CuadernoRepository;
 import apicalendario.repository.HojaRepository;
@@ -32,7 +33,13 @@ public class CuadernoService {
                 .orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado"));
 
         // 🔒 LÓGICA FREEMIUM: Validar límites para usuarios gratuitos
-        boolean esPremium = "ACTIVO".equals(usuario.getEstadoSuscripcion()) || "ADMIN".equals(usuario.getRol().name());
+        // FIX: estadoSuscripcion es un ENUM (EstadoSuscripcion), no un String.
+        // Antes se comparaba con "ACTIVO".equals(...) que SIEMPRE da false
+        // porque un String nunca es igual a un objeto de otro tipo, sin
+        // importar el valor. Por eso ningún usuario (pagado, admin, o mes
+        // gratis) quedaba nunca como premium.
+        boolean esPremium = usuario.getEstadoSuscripcion() == EstadoSuscripcion.ACTIVO
+                || "ADMIN".equals(usuario.getRol().name());
 
         if (!esPremium) {
             long totalCuadernos = cuadernoRepo.countByUsuario(usuario);
