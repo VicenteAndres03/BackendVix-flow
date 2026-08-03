@@ -23,4 +23,6 @@ public interface ProyectoMiembroRepository extends JpaRepository<ProyectoMiembro
     Optional<ProyectoMiembro> findByTokenInvitacion(String token);
 
     List<ProyectoMiembro> findByUsuarioAndEstado(User usuario, EstadoInvitacion estado);
+
+    List<ProyectoMiembro> findByProyectoAndEstado(Proyecto proyecto, EstadoInvitacion estado);
 }
