@@ -157,15 +157,19 @@ public class ProyectoService {
         public List<ProyectoMiembro> obtenerMiembros(Long proyectoId) {
                 Proyecto proyecto = repositorio.findById(proyectoId)
                                 .orElseThrow(() -> new RuntimeException("Proyecto no encontrado"));
-                return repositorioMiembro.findByProyecto(proyecto);
+                // FIX: Solo devolvemos miembros que ya ACEPTARON la invitación.
+                // Antes traía TODOS (incluidos los PENDIENTE), por lo que alguien
+                // recién invitado aparecía en la lista de miembros y en el dropdown
+                // de asignar tareas antes de aceptar el correo.
+                return repositorioMiembro.findByProyectoAndEstado(proyecto, EstadoInvitacion.ACEPTADO);
         }
 
         public List<ProyectoMiembro> obtenerMiembrosPorProyecto(Long proyectoId) {
                 Proyecto proyecto = repositorio.findById(proyectoId)
                                 .orElseThrow(() -> new RuntimeException("Proyecto no encontrado"));
 
-                // 🔥 CORRECCIÓN: Ahora busca en el repositorio correcto (repositorioMiembro)
-                return repositorioMiembro.findByProyecto(proyecto);
+                // FIX: misma corrección que obtenerMiembros() — solo aceptados.
+                return repositorioMiembro.findByProyectoAndEstado(proyecto, EstadoInvitacion.ACEPTADO);
         }
 
 }
